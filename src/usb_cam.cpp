@@ -935,7 +935,7 @@ void UsbCam::init_device(int framerate)
   if (fmt.fmt.pix.sizeimage < min)
     fmt.fmt.pix.sizeimage = min;
 
-  /* TODO: These are local so changing them has no affect. */
+  /* XXX: These were local so changing them would have had no effect. */
   //image_width = fmt.fmt.pix.width;
   //image_height = fmt.fmt.pix.height;
 
@@ -1087,7 +1087,9 @@ void UsbCam::shutdown(void)
 
 void UsbCam::grab_image(sensor_msgs::Image* image)
 {
-  image->header.stamp = ros::Time::now();  /* TODO */
+  /* TODO: We should get the timestamp and sequence ID from the driver. */
+  image->header.stamp = ros::Time::now();
+
   image->height = height_;
   image->width = width_;
   image->is_bigendian = false;
