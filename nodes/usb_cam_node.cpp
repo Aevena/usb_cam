@@ -60,6 +60,7 @@ public:
   int image_width_, image_height_, framerate_, exposure_, brightness_, contrast_, saturation_, sharpness_, focus_,
       white_balance_, gain_;
   bool autofocus_, autoexposure_, auto_white_balance_;
+  bool mono_output_;
   boost::shared_ptr<camera_info_manager::CameraInfoManager> cinfo_;
 
   UsbCam cam_;
@@ -111,6 +112,7 @@ public:
     // enable/disable auto white balance temperature
     node_.param("auto_white_balance", auto_white_balance_, true);
     node_.param("white_balance", white_balance_, 4000);
+    node_.param("mono", mono_output_, false);
 
     // load the camera info
     node_.param("camera_frame_id", img_.header.frame_id, std::string("head_camera"));
@@ -157,7 +159,7 @@ public:
 
     // start the camera
     cam_.start(video_device_name_.c_str(), io_method, pixel_format, image_width_,
-		     image_height_, framerate_);
+		     image_height_, framerate_, mono_output_);
 
     // set camera parameters
     if (brightness_ >= 0)

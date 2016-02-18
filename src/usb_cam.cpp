@@ -292,9 +292,9 @@ static void YUV2RGB(const unsigned char y, const unsigned char u, const unsigned
   *b = CLIPVALUE(b2);
 }
 
-void uyvy2rgb(char *YUV, char *RGB, int NumPixels)
+void UsbCam::uyvy2rgb(char *YUV, char *RGB, int len)
 {
-  int i, j;
+  int i, j, NumPixels = len / 2;
   unsigned char y0, y1, u, v;
   unsigned char r, g, b;
   for (i = 0, j = 0; i < (NumPixels << 1); i += 4, j += 6)
@@ -314,9 +314,9 @@ void uyvy2rgb(char *YUV, char *RGB, int NumPixels)
   }
 }
 
-static void mono102mono8(char *RAW, char *MONO, int NumPixels)
+void UsbCam::mono102mono8(char *RAW, char *MONO, int len)
 {
-  int i, j;
+  int i, j, NumPixels = len / 2;
   for (i = 0, j = 0; i < (NumPixels << 1); i += 2, j += 1)
   {
     //first byte is low byte, second byte is high byte; smash together and convert to 8-bit
@@ -324,9 +324,9 @@ static void mono102mono8(char *RAW, char *MONO, int NumPixels)
   }
 }
 
-static void yuyv2rgb(char *YUV, char *RGB, int NumPixels)
+void UsbCam::yuyv2rgb(char *YUV, char *RGB, int len)
 {
-  int i, j;
+  int i, j, NumPixels = len / 2;
   unsigned char y0, y1, u, v;
   unsigned char r, g, b;
 
@@ -347,16 +347,38 @@ static void yuyv2rgb(char *YUV, char *RGB, int NumPixels)
   }
 }
 
-void rgb242rgb(char *YUV, char *RGB, int NumPixels)
+void UsbCam::yuyv2grey(char *src, char *dst, int len)
 {
-  memcpy(RGB, YUV, NumPixels * 3);
+  len >>= 1;
+  while (len-- > 0) {
+    *dst++ = src[0];
+    src += 2;
+  }
 }
 
+void UsbCam::uyvy2grey(char *src, char *dst, int len)
+{
+  len >>= 1;
+  while (len-- > 0) {
+    *dst++ = src[1];
+    src += 2;
+  }
+}
+
+void UsbCam::rgb2rgb(char *src, char *dst, int len)
+{
+  memcpy(dst, src, len);
+}
+
+void UsbCam::grey2grey(char *src, char *dst, int len)
+{
+  memcpy(dst, src, len);
+}
 
 UsbCam::UsbCam()
   : io_(IO_METHOD_MMAP), fd_(-1), buffers_(NULL), n_buffers_(0), avframe_camera_(NULL),
     avframe_rgb_(NULL), avcodec_(NULL), avoptions_(NULL), avcodec_context_(NULL),
-    avframe_camera_size_(0), avframe_rgb_size_(0), video_sws_(NULL), image_(NULL), is_capturing_(false) {
+    avframe_camera_size_(0), avframe_rgb_size_(0), video_sws_(NULL), is_capturing_(false) {
 }
 UsbCam::~UsbCam()
 {
@@ -401,7 +423,7 @@ int UsbCam::init_mjpeg_decoder(int image_width, int image_height)
   return 1;
 }
 
-void UsbCam::mjpeg2rgb(char *MJPEG, int len, char *RGB, int NumPixels)
+void UsbCam::mjpeg2rgb(char *MJPEG, char *RGB, int len)
 {
   int got_picture;
 
@@ -454,30 +476,7 @@ void UsbCam::mjpeg2rgb(char *MJPEG, int len, char *RGB, int NumPixels)
   }
 }
 
-void UsbCam::process_image(const void * src, int len, camera_image_t *dest)
-{
-  if (pixelformat_ == V4L2_PIX_FMT_YUYV)
-  {
-    if (monochrome_)
-    { //actually format V4L2_PIX_FMT_Y16, but xioctl gets unhappy if you don't use the advertised type (yuyv)
-      mono102mono8((char*)src, dest->image, dest->width * dest->height);
-    }
-    else
-    {
-      yuyv2rgb((char*)src, dest->image, dest->width * dest->height);
-    }
-  }
-  else if (pixelformat_ == V4L2_PIX_FMT_UYVY)
-    uyvy2rgb((char*)src, dest->image, dest->width * dest->height);
-  else if (pixelformat_ == V4L2_PIX_FMT_MJPEG)
-    mjpeg2rgb((char*)src, len, dest->image, dest->width * dest->height);
-  else if (pixelformat_ == V4L2_PIX_FMT_RGB24)
-    rgb242rgb((char*)src, dest->image, dest->width * dest->height);
-  else if (pixelformat_ == V4L2_PIX_FMT_GREY)
-    memcpy(dest->image, (char*)src, dest->width * dest->height);
-}
-
-int UsbCam::read_frame()
+int UsbCam::read_frame(char *frame)
 {
   struct v4l2_buffer buf;
   unsigned int i;
@@ -504,7 +503,7 @@ int UsbCam::read_frame()
         }
       }
 
-      process_image(buffers_[0].start, len, image_);
+      (this->*process_image)((char*)buffers_[0].start, frame, len);
 
       break;
 
@@ -533,7 +532,7 @@ int UsbCam::read_frame()
 
       assert(buf.index < n_buffers_);
       len = buf.bytesused;
-      process_image(buffers_[buf.index].start, len, image_);
+      (this->*process_image)((char*)buffers_[buf.index].start, frame, len);
 
       if (-1 == xioctl(fd_, VIDIOC_QBUF, &buf))
         errno_exit("VIDIOC_QBUF");
@@ -569,7 +568,7 @@ int UsbCam::read_frame()
 
       assert(i < n_buffers_);
       len = buf.bytesused;
-      process_image((void *)buf.m.userptr, len, image_);
+      (this->*process_image)((char*)buf.m.userptr, frame, len);
 
       if (-1 == xioctl(fd_, VIDIOC_QBUF, &buf))
         errno_exit("VIDIOC_QBUF");
@@ -610,7 +609,6 @@ void UsbCam::stop_capturing(void)
 
 void UsbCam::start_capturing(void)
 {
-
   if(is_capturing_) return;
 
   unsigned int i;
@@ -825,7 +823,7 @@ void UsbCam::init_userp(unsigned int buffer_size)
   }
 }
 
-void UsbCam::init_device(int image_width, int image_height, int framerate)
+void UsbCam::init_device(int framerate)
 {
   struct v4l2_capability cap;
   struct v4l2_cropcap cropcap;
@@ -912,10 +910,17 @@ void UsbCam::init_device(int image_width, int image_height, int framerate)
 //  fmt.fmt.pix.field = V4L2_FIELD_INTERLACED;
 
   fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-  fmt.fmt.pix.width = image_width;
-  fmt.fmt.pix.height = image_height;
-  fmt.fmt.pix.pixelformat = pixelformat_;
+  fmt.fmt.pix.width = width_;
+  fmt.fmt.pix.height = height_;
   fmt.fmt.pix.field = V4L2_FIELD_INTERLACED;
+
+  if (pixelformat_ == V4L2_PIX_FMT_Y16) {
+    // 10-bit mono expresed as 16-bit pixels, but we need to use the
+    // type advertised by the camera (yuyv).
+    fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV;
+  } else {
+    fmt.fmt.pix.pixelformat = pixelformat_;
+  }
 
   if (-1 == xioctl(fd_, VIDIOC_S_FMT, &fmt))
     errno_exit("VIDIOC_S_FMT");
@@ -930,8 +935,9 @@ void UsbCam::init_device(int image_width, int image_height, int framerate)
   if (fmt.fmt.pix.sizeimage < min)
     fmt.fmt.pix.sizeimage = min;
 
-  image_width = fmt.fmt.pix.width;
-  image_height = fmt.fmt.pix.height;
+  /* TODO: These are local so changing them has no affect. */
+  //image_width = fmt.fmt.pix.width;
+  //image_height = fmt.fmt.pix.height;
 
   struct v4l2_streamparm stream_params;
   memset(&stream_params, 0, sizeof(stream_params));
@@ -999,34 +1005,48 @@ void UsbCam::open_device(void)
 
 void UsbCam::start(const std::string& dev, io_method io_method,
 		   pixel_format pixel_format, int image_width, int image_height,
-		   int framerate)
+		   int framerate, bool mono_wanted)
 {
   camera_dev_ = dev;
 
   io_ = io_method;
-  monochrome_ = false;
+  monochrome_ = mono_wanted;
+  width_  = image_width;
+  height_ = image_height;
+
   if (pixel_format == PIXEL_FORMAT_YUYV)
+  {
     pixelformat_ = V4L2_PIX_FMT_YUYV;
+    process_image = monochrome_ ? &UsbCam::yuyv2grey : &UsbCam::yuyv2rgb;
+  }
   else if (pixel_format == PIXEL_FORMAT_UYVY)
+  {
     pixelformat_ = V4L2_PIX_FMT_UYVY;
+    process_image = monochrome_ ? &UsbCam::uyvy2grey : &UsbCam::uyvy2rgb;
+  }
   else if (pixel_format == PIXEL_FORMAT_MJPEG)
   {
     pixelformat_ = V4L2_PIX_FMT_MJPEG;
     init_mjpeg_decoder(image_width, image_height);
+    process_image = &UsbCam::mjpeg2rgb;
+    monochrome_ = false;  /* not supported */
   }
   else if (pixel_format == PIXEL_FORMAT_YUVMONO10)
   {
-    //actually format V4L2_PIX_FMT_Y16 (10-bit mono expresed as 16-bit pixels), but we need to use the advertised type (yuyv)
-    pixelformat_ = V4L2_PIX_FMT_YUYV;
+    pixelformat_ = V4L2_PIX_FMT_Y16;
+    process_image = &UsbCam::mono102mono8;
     monochrome_ = true;
   }
   else if (pixel_format == PIXEL_FORMAT_RGB24)
   {
     pixelformat_ = V4L2_PIX_FMT_RGB24;
+    process_image = &UsbCam::rgb2rgb;
+    monochrome_ = false;  /* not supported */
   }
   else if (pixel_format == PIXEL_FORMAT_GREY)
   {
     pixelformat_ = V4L2_PIX_FMT_GREY;
+    process_image = &UsbCam::grey2grey;
     monochrome_ = true;
   }
   else
@@ -1035,20 +1055,14 @@ void UsbCam::start(const std::string& dev, io_method io_method,
     exit(EXIT_FAILURE);
   }
 
+  if (mono_wanted && !monochrome_)
+    ROS_WARN("Monochrome not supported with %.4s", (char*)&pixelformat_);
+  else if (mono_wanted)
+    ROS_INFO("Will output monochrome.");
+
   open_device();
-  init_device(image_width, image_height, framerate);
+  init_device(framerate);
   start_capturing();
-
-  image_ = (camera_image_t *)calloc(1, sizeof(camera_image_t));
-
-  image_->width = image_width;
-  image_->height = image_height;
-  image_->bytes_per_pixel = 3;      //corrected 11/10/15 (BYTES not BITS per pixel)
-
-  image_->image_size = image_->width * image_->height * image_->bytes_per_pixel;
-  image_->is_new = 0;
-  image_->image = (char *)calloc(image_->image_size, sizeof(char));
-  memset(image_->image, 0, image_->image_size * sizeof(char));
 }
 
 void UsbCam::shutdown(void)
@@ -1069,32 +1083,25 @@ void UsbCam::shutdown(void)
   if (avframe_rgb_)
     av_free(avframe_rgb_);
   avframe_rgb_ = NULL;
-  if(image_)
-    free(image_);
-  image_ = NULL;
 }
 
-void UsbCam::grab_image(sensor_msgs::Image* msg)
+void UsbCam::grab_image(sensor_msgs::Image* image)
 {
-  // grab the image
-  grab_image();
-  // stamp the image
-  msg->header.stamp = ros::Time::now();
-  // fill the info
-  if (monochrome_)
-  {
-    fillImage(*msg, "mono8", image_->height, image_->width, image_->width,
-        image_->image);
-  }
-  else
-  {
-    fillImage(*msg, "rgb8", image_->height, image_->width, 3 * image_->width,
-        image_->image);
-  }
-}
+  image->header.stamp = ros::Time::now();  /* TODO */
+  image->height = height_;
+  image->width = width_;
+  image->is_bigendian = false;
 
-void UsbCam::grab_image()
-{
+  if (monochrome_) {
+    image->encoding = sensor_msgs::image_encodings::MONO8;
+    image->step = width_;
+  } else {
+    image->encoding = sensor_msgs::image_encodings::RGB8;
+    image->step = width_ * 3;
+  }
+
+  image->data.resize(image->height * image->step);
+
   fd_set fds;
   struct timeval tv;
   int r;
@@ -1122,8 +1129,7 @@ void UsbCam::grab_image()
     exit(EXIT_FAILURE);
   }
 
-  read_frame();
-  image_->is_new = 1;
+  read_frame((char*)&image->data[0]);
 }
 
 // enables/disables auto focus

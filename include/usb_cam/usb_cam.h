@@ -76,7 +76,8 @@ class UsbCam {
 
   // start camera
   void start(const std::string& dev, io_method io, pixel_format pf,
-		    int image_width, int image_height, int framerate);
+		    int image_width, int image_height, int framerate,
+        bool mono_wanted=false);
   // shutdown camera
   void shutdown(void);
 
@@ -98,15 +99,6 @@ class UsbCam {
   bool is_capturing();
 
  private:
-  typedef struct
-  {
-    int width;
-    int height;
-    int bytes_per_pixel;
-    int image_size;
-    char *image;
-    int is_new;
-  } camera_image_t;
 
   struct buffer
   {
@@ -114,24 +106,30 @@ class UsbCam {
     size_t length;
   };
 
+  void (UsbCam::*process_image)(char *src, char *dst, int len);
+  void mjpeg2rgb(char *src, char *dst, int len);
+  void yuyv2grey(char *src, char *dst, int len);
+  void yuyv2rgb(char *src, char *dst, int len);
+  void uyvy2grey(char *src, char *dst, int len);
+  void uyvy2rgb(char *src, char *dst, int len);
+  void mono102mono8(char *src, char *dst, int len);
+  void rgb2rgb(char *src, char *dst, int len);
+  void grey2grey(char *src, char *dst, int len);
 
   int init_mjpeg_decoder(int image_width, int image_height);
-  void mjpeg2rgb(char *MJPEG, int len, char *RGB, int NumPixels);
-  void process_image(const void * src, int len, camera_image_t *dest);
-  int read_frame();
+  int read_frame(char *frame);
   void uninit_device(void);
   void init_read(unsigned int buffer_size);
   void init_mmap(void);
   void init_userp(unsigned int buffer_size);
-  void init_device(int image_width, int image_height, int framerate);
+  void init_device(int framerate);
   void close_device(void);
   void open_device(void);
-  void grab_image();
+
   bool is_capturing_;
-
-
   std::string camera_dev_;
   unsigned int pixelformat_;
+  int width_, height_;
   bool monochrome_;
   io_method io_;
   int fd_;
@@ -145,8 +143,6 @@ class UsbCam {
   int avframe_camera_size_;
   int avframe_rgb_size_;
   struct SwsContext *video_sws_;
-  camera_image_t *image_;
-
 };
 
 }
