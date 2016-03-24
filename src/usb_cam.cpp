@@ -463,7 +463,7 @@ void UsbCam::mjpeg2rgb(char *MJPEG, char *RGB, int len)
   }
 
   video_sws_ = sws_getContext(xsize, ysize, avcodec_context_->pix_fmt, xsize, ysize, PIX_FMT_RGB24, SWS_BILINEAR, NULL,
-			      NULL,  NULL);
+                              NULL,  NULL);
   sws_scale(video_sws_, avframe_camera_->data, avframe_camera_->linesize, 0, ysize, avframe_rgb_->data,
             avframe_rgb_->linesize);
   sws_freeContext(video_sws_);
@@ -476,8 +476,9 @@ void UsbCam::mjpeg2rgb(char *MJPEG, char *RGB, int len)
   }
 }
 
-int UsbCam::read_frame(char *frame)
+int UsbCam::read_frame(sensor_msgs::Image *image)
 {
+  char *frame = (char*)&image->data[0];
   struct v4l2_buffer buf;
   unsigned int i;
   int len;
@@ -503,6 +504,7 @@ int UsbCam::read_frame(char *frame)
         }
       }
 
+      image->header.stamp = ros::Time::now();
       (this->*process_image)((char*)buffers_[0].start, frame, len);
 
       break;
@@ -574,6 +576,31 @@ int UsbCam::read_frame(char *frame)
         errno_exit("VIDIOC_QBUF");
 
       break;
+  }
+
+  if (IO_METHOD_READ == io_) {
+    ROS_WARN_ONCE("No sequence/timestamp data using 'read' I/O method.");
+    /* We use the current time (captured earlier). */
+  } else {
+    if (buf.flags & V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC) {
+      struct timespec now_mono, now_wall;
+      clock_gettime(CLOCK_MONOTONIC, &now_mono);
+      clock_gettime(CLOCK_REALTIME,  &now_wall);
+      /* Convert the timestamp to the wall clock. */
+      buf.timestamp.tv_sec  +=  now_wall.tv_sec  - now_mono.tv_sec;
+      buf.timestamp.tv_usec += (now_wall.tv_nsec - now_mono.tv_nsec) / 1000;
+      /* Adjust for overflow/underflow if necessary. */
+      if (buf.timestamp.tv_usec < 0) {
+        buf.timestamp.tv_sec--;
+        buf.timestamp.tv_usec += 1000 * 1000;
+      } else if (buf.timestamp.tv_usec > 1000 * 1000) {
+        buf.timestamp.tv_sec++;
+        buf.timestamp.tv_usec -= 1000 * 1000;
+      }
+    }
+    image->header.seq   = buf.sequence;
+    image->header.stamp = ros::Time(buf.timestamp.tv_sec,
+                                    buf.timestamp.tv_usec * 1000);
   }
 
   return 1;
@@ -766,8 +793,8 @@ void UsbCam::init_mmap(void)
 
     buffers_[n_buffers_].length = buf.length;
     buffers_[n_buffers_].start = mmap(NULL /* start anywhere */, buf.length, PROT_READ | PROT_WRITE /* required */,
-				      MAP_SHARED /* recommended */,
-				      fd_, buf.m.offset);
+                                      MAP_SHARED /* recommended */,
+                                      fd_, buf.m.offset);
 
     if (MAP_FAILED == buffers_[n_buffers_].start)
       errno_exit("mmap");
@@ -1004,8 +1031,8 @@ void UsbCam::open_device(void)
 }
 
 void UsbCam::start(const std::string& dev, io_method io_method,
-		   pixel_format pixel_format, int image_width, int image_height,
-		   int framerate, bool mono_wanted)
+                   pixel_format pixel_format, int image_width, int image_height,
+                   int framerate, bool mono_wanted)
 {
   camera_dev_ = dev;
 
@@ -1087,9 +1114,6 @@ void UsbCam::shutdown(void)
 
 void UsbCam::grab_image(sensor_msgs::Image* image)
 {
-  /* TODO: We should get the timestamp and sequence ID from the driver. */
-  image->header.stamp = ros::Time::now();
-
   image->height = height_;
   image->width = width_;
   image->is_bigendian = false;
@@ -1131,7 +1155,7 @@ void UsbCam::grab_image(sensor_msgs::Image* image)
     exit(EXIT_FAILURE);
   }
 
-  read_frame((char*)&image->data[0]);
+  read_frame(image);
 }
 
 // enables/disables auto focus

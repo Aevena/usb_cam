@@ -117,7 +117,7 @@ class UsbCam {
   void grey2grey(char *src, char *dst, int len);
 
   int init_mjpeg_decoder(int image_width, int image_height);
-  int read_frame(char *frame);
+  int read_frame(sensor_msgs::Image *image);
   void uninit_device(void);
   void init_read(unsigned int buffer_size);
   void init_mmap(void);
