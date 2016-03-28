@@ -593,7 +593,7 @@ int UsbCam::read_frame(sensor_msgs::Image *image)
       if (buf.timestamp.tv_usec < 0) {
         buf.timestamp.tv_sec--;
         buf.timestamp.tv_usec += 1000 * 1000;
-      } else if (buf.timestamp.tv_usec > 1000 * 1000) {
+      } else if (buf.timestamp.tv_usec >= 1000 * 1000) {
         buf.timestamp.tv_sec++;
         buf.timestamp.tv_usec -= 1000 * 1000;
       }
