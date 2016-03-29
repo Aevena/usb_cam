@@ -476,7 +476,7 @@ void UsbCam::mjpeg2rgb(char *MJPEG, char *RGB, int len)
   }
 }
 
-int UsbCam::read_frame(sensor_msgs::Image *image)
+bool UsbCam::read_frame(sensor_msgs::Image *image)
 {
   char *frame = (char*)&image->data[0];
   struct v4l2_buffer buf;
@@ -492,7 +492,7 @@ int UsbCam::read_frame(sensor_msgs::Image *image)
         switch (errno)
         {
           case EAGAIN:
-            return 0;
+            return false;
 
           case EIO:
             /* Could ignore EIO, see spec. */
@@ -520,7 +520,7 @@ int UsbCam::read_frame(sensor_msgs::Image *image)
         switch (errno)
         {
           case EAGAIN:
-            return 0;
+            return false;
 
           case EIO:
             /* Could ignore EIO, see spec. */
@@ -552,7 +552,7 @@ int UsbCam::read_frame(sensor_msgs::Image *image)
         switch (errno)
         {
           case EAGAIN:
-            return 0;
+            return false;
 
           case EIO:
             /* Could ignore EIO, see spec. */
@@ -603,7 +603,7 @@ int UsbCam::read_frame(sensor_msgs::Image *image)
                                     buf.timestamp.tv_usec * 1000);
   }
 
-  return 1;
+  return true;
 }
 
 bool UsbCam::is_capturing() {
@@ -1112,7 +1112,7 @@ void UsbCam::shutdown(void)
   avframe_rgb_ = NULL;
 }
 
-void UsbCam::grab_image(sensor_msgs::Image* image)
+bool UsbCam::grab_image(sensor_msgs::Image* image)
 {
   image->height = height_;
   image->width = width_;
@@ -1132,6 +1132,7 @@ void UsbCam::grab_image(sensor_msgs::Image* image)
   struct timeval tv;
   int r;
 
+again:
   FD_ZERO(&fds);
   FD_SET(fd_, &fds);
 
@@ -1144,18 +1145,18 @@ void UsbCam::grab_image(sensor_msgs::Image* image)
   if (-1 == r)
   {
     if (EINTR == errno)
-      return;
+      goto again;
 
     errno_exit("select");
   }
 
   if (0 == r)
   {
-    ROS_ERROR("select timeout");
-    exit(EXIT_FAILURE);
+    ROS_DEBUG("select timeout");
+    return false;
   }
 
-  read_frame(image);
+  return read_frame(image);
 }
 
 // enables/disables auto focus

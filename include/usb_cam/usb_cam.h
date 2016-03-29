@@ -82,7 +82,7 @@ class UsbCam {
   void shutdown(void);
 
   // grabs a new image from the camera
-  void grab_image(sensor_msgs::Image* image);
+  bool grab_image(sensor_msgs::Image* image);
 
   // enables/disable auto focus
   void set_auto_focus(int value);
@@ -117,7 +117,7 @@ class UsbCam {
   void grey2grey(char *src, char *dst, int len);
 
   int init_mjpeg_decoder(int image_width, int image_height);
-  int read_frame(sensor_msgs::Image *image);
+  bool read_frame(sensor_msgs::Image *image);
   void uninit_device(void);
   void init_read(unsigned int buffer_size);
   void init_mmap(void);
